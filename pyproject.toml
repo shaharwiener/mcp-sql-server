@@ -1,0 +1,41 @@
+[project]
+name = "mcp-qa-apis"
+version = "1.0.0"
+description = "MCP Server for Pango QA APIs - Comprehensive API access for testing and manual investigation"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Pango QA Team" }
+]
+keywords = ["mcp", "qa", "api", "testing", "pango"]
+dependencies = [
+    "mcp[cli]>=1.6.0",
+    "smolagents[litellm,mcp]>=1.13.0",
+    "requests>=2.32.3",
+    "python-dotenv>=1.0.0",
+    "boto3>=1.38.43",
+    "python-dateutil>=2.8.0",
+    "pytz>=2023.3"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
