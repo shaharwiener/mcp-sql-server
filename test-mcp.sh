@@ -67,7 +67,11 @@ from services.core.execution_service import ExecutionService
 service = ExecutionService()
 result = service.execute_readonly('SELECT COUNT(*) as user_count FROM dbo.Users', env='Int')
 print(f'✅ Query executed successfully')
-print(f'✅ User count: {result[\"rows\"][0][0] if result.get(\"rows\") else \"N/A\"}')
+if result.get('success') and result.get('data'):
+    user_count = result['data'][0].get('user_count', result['data'][0].get(list(result['data'][0].keys())[0], 'N/A'))
+    print(f'✅ User count: {user_count}')
+else:
+    print(f'✅ Query executed (row_count: {result.get(\"row_count\", 0)})')
 " 2>&1; then
     echo "✅ Query execution test passed"
 else

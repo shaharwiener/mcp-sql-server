@@ -82,14 +82,13 @@ export MCP_CONFIG_PATH=config/config.yaml
 source venv310/bin/activate
 
 # Run the test script
-python test_mcp_tool.py
+./call_mcp.sh "SELECT username FROM dbo.Users" Int
 ```
 
 ## Available Scripts
 
 - **`call_mcp.sh`**: Simple wrapper to call MCP tools via Docker
-- **`test_mcp_tool.py`**: Python script to test MCP tool functionality (works in Docker or locally)
-- **`run_mcp_local.sh`**: Alternative wrapper script
+- **`test-mcp.sh`**: Comprehensive test script to verify MCP server functionality
 
 ## How It Works
 
