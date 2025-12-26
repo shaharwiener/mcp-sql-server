@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-sql-server
+  labels:
+    app: mcp-sql-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-sql-server
+  template:
+    metadata:
+      labels:
+        app: mcp-sql-server
+    spec:
+      containers:
+        - name: mcp-server
+          image: mcp-sql-server:latest # Replace with your ECR/Registry path
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9303
+          env:
+            - name: MCP_TRANSPORT
+              value: "sse"
+            - name: MCP_CONFIG_PATH
+              value: "/app/config/config.yaml" # Baked into Docker image
+            # Secrets provided via K8s Secrets
+            - name: DB_CONNECTION_STRING_INT
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-sql-secrets
+                  key: db-connection-int
+                  optional: true
+            - name: DB_CONNECTION_STRING_STG
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-sql-secrets
+                  key: db-connection-stg
+                  optional: true
+            - name: DB_CONNECTION_STRING_PRD
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-sql-secrets
+                  key: db-connection-prd
+                  optional: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-sql-server
+spec:
+  selector:
+    app: mcp-sql-server
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9303
+  type: ClusterIP

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "sql-server-mcp": {
+      "command": "docker",
+      "args": [
+        "exec",
+        "-i",
+        "mcp-sql-server",
+        "python",
+        "server.py"
+      ]
+    }
+  }
+}

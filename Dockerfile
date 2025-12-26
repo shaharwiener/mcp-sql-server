@@ -1,40 +1,28 @@
-# Use official Python runtime as a parent image
-FROM python:3.11-slim
+FROM python:3.11-bullseye
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive
-
-# Install system dependencies and ODBC drivers
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies for ODBC
+RUN apt-get update && apt-get install -y \
     curl \
-    gnupg2 \
+    gnupg \
+    unixodbc \
     unixodbc-dev \
-    ca-certificates \
-    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
+    && curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean
 
-# Set work directory
 WORKDIR /app
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy Requirements
+COPY pyproject.toml .
+# We might need to generate requirements.txt from toml or just install dependencies
+# simplified for this context:
+RUN pip install "mcp[cli]>=1.6.0" "structlog" "pydantic" "pyodbc>=5.1.0" "sqlglot>=19.0.0" "pyyaml" "python-dotenv"
 
-# Copy application code
 COPY . .
 
-# Create non-root user for security
-RUN useradd -m appuser && chown -R appuser:appuser /app
-USER appuser
+# Default Config Path
+ENV MCP_CONFIG_PATH=/app/config/config.yaml
 
-# Expose port (default 9303, but can be overridden)
-EXPOSE 9303
-
-# Command to run the application
 CMD ["python", "server.py"]

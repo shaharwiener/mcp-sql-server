@@ -1,0 +1,100 @@
+# SQL Server MCP Configuration
+# This is the single source of truth for the server configuration.
+
+# Environment: Default environment to use if none specified
+environment: "Int"
+
+# Available Environments
+available_environments:
+  - "Int"
+  - "Stg"
+  - "Prd"
+
+# Server Settings
+server:
+  host: "0.0.0.0"
+  port: 9303
+  transport: "stdio" # or "sse"
+  log_level: "INFO"
+
+  # Connection Limits
+database:
+  connection_pool_size: 10
+  connection_timeout_seconds: 30
+  command_timeout_seconds: 60
+  max_command_timeout_seconds: 300
+  app_name: "MCP-SQLServer"
+
+  # Note: Connection String MUST be provided via Environment Variable: DB_CONNECTION_STRING
+
+# Safety & Limits
+safety:
+  # Global defaults
+  max_rows: 1000
+  max_payload_size_mb: 1
+  max_execution_time_seconds: 60
+  allow_linked_servers: false
+  allowed_databases: [] # Empty list = allow all (if connection allows)
+
+  # Resource control hints (CPU and memory limits at SQL Server level)
+  enable_resource_hints: true
+  maxdop: 1  # Default: single-threaded (1 CPU core)
+  max_grant_percent: 10  # Default: 10% of available query memory
+
+  # Environment-specific overrides for production protection
+  environment_overrides:
+    Int:
+      max_rows: 10000
+      max_execution_time_seconds: 120
+      query_cost_threshold: 100
+      enable_nolock_hint: false
+      require_top_clause: false
+      enable_resource_hints: true
+      maxdop: 4  # Allow parallelism in dev
+      max_grant_percent: 50  # More memory allowed in dev
+    Stg:
+      max_rows: 5000
+      max_execution_time_seconds: 90
+      query_cost_threshold: 50
+      enable_nolock_hint: false
+      require_top_clause: false
+      enable_resource_hints: true
+      maxdop: 2  # Limited parallelism in staging
+      max_grant_percent: 25  # Moderate memory limit
+    Prd:
+      max_rows: 500
+      max_execution_time_seconds: 30
+      query_cost_threshold: 10
+      enable_nolock_hint: true
+      require_top_clause: true
+      enable_resource_hints: true
+      maxdop: 1  # Single-threaded in production (strictest)
+      max_grant_percent: 10  # Minimal memory in production
+
+  # Concurrency limits (prevent overwhelming the server)
+  max_concurrent_queries: 5
+  max_concurrent_queries_per_user: 2
+
+  # Query cost protection
+  enable_cost_check: true
+  max_query_cost: 50
+
+  # Risk Scoring Weights (0-100)
+  risk_weights:
+    no_where_clause: 100
+    cross_join: 80
+    wildcard_select: 20
+    dynamic_sql: 90
+    ddl_statement: 100
+    table_scan: 60
+    missing_index: 40
+
+# Best Practices Rules
+best_practices:
+  enforce_schema_prefix: true
+  enforce_no_select_star: true
+  enforce_parameterization: true
+
+# Logging & Metrics
+logging:
+  metrics_enabled: true

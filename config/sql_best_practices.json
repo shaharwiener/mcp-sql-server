@@ -1,0 +1,88 @@
+{
+  "version": "1.0",
+  "last_updated": "2025-12-20",
+  "categories": {
+    "ast_based": {
+      "description": "Rules that can be checked via SQL syntax tree analysis",
+      "rules": [
+        {"id": "BP001", "name": "Avoid SELECT *", "description": "Always specify columns explicitly to reduce data transfer and improve performance", "severity": "medium", "implemented": true},
+        {"id": "BP002", "name": "Use Schema Prefix", "description": "Use schema prefix to specify the schema of the table explicitly", "severity": "medium", "implemented": true},
+        {"id": "BP003", "name": "Avoid Cross Joins", "description": "Ensure join conditions are specific to avoid unintentional cross joins", "severity": "high", "implemented": true},
+        {"id": "BP004", "name": "Avoid Functions in WHERE Clause", "description": "Functions in WHERE clause prevent index usage", "severity": "high", "implemented": true},
+        {"id": "BP005", "name": "Avoid OR in WHERE Clause", "description": "Use UNION ALL instead of OR when possible for better index usage", "severity": "medium", "implemented": true},
+        {"id": "BP006", "name": "Minimize Use of DISTINCT", "description": "Only use DISTINCT when necessary as it adds processing overhead", "severity": "low", "implemented": true},
+        {"id": "BP007", "name": "Use EXISTS Instead of IN", "description": "EXISTS is more efficient than IN for subqueries", "severity": "medium", "implemented": true},
+        {"id": "BP008", "name": "Avoid Cursors", "description": "Use set-based operations instead of cursors", "severity": "high", "implemented": true},
+        {"id": "BP009", "name": "Avoid Scalar Functions in SELECT", "description": "Scalar functions in SELECT can be a performance bottleneck", "severity": "medium", "implemented": true},
+        {"id": "BP010", "name": "Avoid Large IN Lists", "description": "Replace large IN lists with joins or temp tables", "severity": "medium", "implemented": true},
+        {"id": "BP011", "name": "Use UNION ALL vs UNION", "description": "Use UNION ALL when duplicates are acceptable to avoid deduplication overhead", "severity": "low", "implemented": true},
+        {"id": "BP012", "name": "Avoid Implicit Conversions", "description": "Ensure data types match to avoid implicit conversions", "severity": "high", "implemented": true},
+        {"id": "BP013", "name": "Use SET NOCOUNT ON", "description": "Use in stored procedures to reduce network traffic", "severity": "low", "implemented": true},
+        {"id": "BP014", "name": "Use SET XACT_ABORT ON", "description": "Automatically rollback transactions on errors", "severity": "high", "implemented": true},
+        {"id": "BP015", "name": "Use TRY...CATCH", "description": "Handle errors gracefully in procedures and transactions", "severity": "medium", "implemented": true},
+        {"id": "BP016", "name": "Use Proper Joins", "description": "Prefer INNER JOINs over OUTER JOINs when possible", "severity": "medium", "implemented": true},
+        {"id": "BP017", "name": "Temp Tables vs Table Variables", "description": "Use temp tables for large datasets, table variables for small ones", "severity": "medium", "implemented": true},
+        {"id": "BP018", "name": "Dynamic SQL Caution", "description": "Ensure dynamic SQL inputs are parameterized", "severity": "critical", "implemented": true},
+        {"id": "BP019", "name": "Keep Transactions Short", "description": "Ensure transactions have proper COMMIT/ROLLBACK", "severity": "high", "implemented": true},
+        {"id": "BP020", "name": "Optimize Subqueries", "description": "Convert subqueries to JOINs or CTEs when possible", "severity": "medium", "implemented": true},
+        {"id": "BP021", "name": "Limit Result Set", "description": "Use TOP or LIMIT to return only necessary rows", "severity": "medium", "implemented": true},
+        {"id": "BP022", "name": "Use usp Prefix", "description": "Use 'usp_' prefix for user-defined stored procedures, not 'sp_'", "severity": "low", "implemented": true}
+      ]
+    },
+    "execution_plan": {
+      "description": "Rules that require execution plan analysis",
+      "rules": [
+        {"id": "BP023", "name": "Missing Indexes", "description": "Detect missing index recommendations in execution plan", "severity": "high", "implemented": true},
+        {"id": "BP024", "name": "Table Scans", "description": "Identify table scan operations that read entire tables", "severity": "high", "implemented": true},
+        {"id": "BP025", "name": "Index Scans vs Seeks", "description": "Prefer index seeks over index scans", "severity": "medium", "implemented": true},
+        {"id": "BP026", "name": "Implicit Conversions in Plan", "description": "Detect implicit conversions in execution plan", "severity": "high", "implemented": true},
+        {"id": "BP027", "name": "Parallelism Issues", "description": "Detect excessive parallelism operators", "severity": "medium", "implemented": true},
+        {"id": "BP028", "name": "Expensive Sort Operations", "description": "Identify expensive sort operations", "severity": "medium", "implemented": true},
+        {"id": "BP029", "name": "Hash Operations", "description": "Detect hash match operations", "severity": "medium", "implemented": true},
+        {"id": "BP030", "name": "Key Lookups", "description": "Identify key/RID lookups indicating missing covering indexes", "severity": "high", "implemented": true},
+        {"id": "BP031", "name": "Cardinality Estimation Issues", "description": "Detect large discrepancies between estimated and actual rows", "severity": "high", "implemented": true}
+      ]
+    },
+    "metadata": {
+      "description": "Rules that require querying database metadata",
+      "rules": [
+        {"id": "BP032", "name": "Statistics Freshness", "description": "Check if statistics are up to date", "severity": "high", "implemented": false},
+        {"id": "BP033", "name": "Index Fragmentation", "description": "Detect fragmented indexes that need rebuilding", "severity": "medium", "implemented": false},
+        {"id": "BP034", "name": "Missing Statistics", "description": "Identify tables missing statistics", "severity": "high", "implemented": false},
+        {"id": "BP035", "name": "Unused Indexes", "description": "Detect indexes that are never used", "severity": "low", "implemented": false},
+        {"id": "BP036", "name": "Duplicate Indexes", "description": "Identify redundant or duplicate indexes", "severity": "medium", "implemented": false},
+        {"id": "BP037", "name": "Table Partitioning", "description": "Check if large tables should be partitioned", "severity": "low", "implemented": false},
+        {"id": "BP038", "name": "Columnstore Indexes", "description": "Recommend columnstore indexes for data warehousing", "severity": "low", "implemented": false},
+        {"id": "BP039", "name": "Data Type Appropriateness", "description": "Check for oversized data types", "severity": "low", "implemented": false},
+        {"id": "BP040", "name": "Heap Tables", "description": "Identify tables without clustered indexes", "severity": "medium", "implemented": false},
+        {"id": "BP041", "name": "Wide Tables", "description": "Detect tables with excessive columns", "severity": "low", "implemented": false},
+        {"id": "BP042", "name": "Foreign Key Indexes", "description": "Ensure foreign keys have supporting indexes", "severity": "medium", "implemented": false}
+      ]
+    },
+    "general": {
+      "description": "General best practices requiring human judgment",
+      "rules": [
+        {"id": "BP043", "name": "Use Descriptive Names", "description": "Choose meaningful names for objects", "severity": "low", "implemented": false, "automatable": false},
+        {"id": "BP044", "name": "Use Appropriate Data Types", "description": "Select suitable data types for variables", "severity": "medium", "implemented": false, "automatable": false},
+        {"id": "BP045", "name": "Avoid Reserved Keywords", "description": "Don't use SQL Server reserved keywords for names", "severity": "medium", "implemented": false, "automatable": false},
+        {"id": "BP046", "name": "Batch Updates and Deletes", "description": "Batch large operations to reduce locking", "severity": "medium", "implemented": false, "automatable": false},
+        {"id": "BP047", "name": "Optimize JOIN Order", "description": "Place smallest result set first in joins", "severity": "low", "implemented": false, "automatable": false},
+        {"id": "BP048", "name": "Filter Early", "description": "Apply filters as early as possible", "severity": "medium", "implemented": false, "automatable": false},
+        {"id": "BP049", "name": "Review and Refactor Code", "description": "Regularly review SQL code for optimization", "severity": "low", "implemented": false, "automatable": false},
+        {"id": "BP050", "name": "Continuous Learning", "description": "Stay updated with SQL Server features", "severity": "low", "implemented": false, "automatable": false}
+      ]
+    }
+  },
+  "implementation_summary": {
+    "total_rules": 50,
+    "implemented": 31,
+    "not_implemented": 19,
+    "not_automatable": 8,
+    "by_category": {
+      "ast_based": {"total": 22, "implemented": 22},
+      "execution_plan": {"total": 9, "implemented": 9},
+      "metadata": {"total": 11, "implemented": 0},
+      "general": {"total": 8, "implemented": 0}
+    }
+  }
+}

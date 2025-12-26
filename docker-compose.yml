@@ -1,15 +1,58 @@
+version: '3.8'
 services:
-  sql-server:
-    image: mcr.microsoft.com/azure-sql-edge:latest
-    container_name: mcp-sql-server-db
+  sql-server-int:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: sql-server-int
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=YourStrong!Passw0rd
-      - MSSQL_PID=Developer
+      - MSSQL_SA_PASSWORD=McpSql2025!Secure
+      - MSSQL_TCP_PORT=1433
     ports:
       - "1433:1433"
     volumes:
-      - sqlvolume_v3:/var/opt/mssql
+      - ./init-db.sql:/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -C -S localhost -U sa -P McpSql2025!Secure -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      retries: 10
+      start_period: 60s
 
-volumes:
-  sqlvolume_v3: {}
+  mcp-sql-server:
+    build: .
+    container_name: mcp-sql-server
+    depends_on:
+      sql-server-int:
+        condition: service_healthy
+    ports:
+      - "9303:8000"
+    volumes:
+      # Mount code for local development (allows editing without rebuilding)
+      - .:/app
+    environment:
+      - MCP_CONFIG_PATH=/app/config/config.yaml
+      - MCP_Environment=Int
+      # Override transport to SSE
+      - MCP_TRANSPORT=sse
+      # Uvicorn settings for SSE mode
+      # Server listens on port 8000 inside container, mapped to 9303 on host
+      - PORT=8000
+      - HOST=0.0.0.0
+      # Int Environment (Local Docker)
+      - DB_SERVER_INT=sql-server-int
+      - DB_DATABASE_INT=MyAppDB
+      - DB_USERNAME_INT=sa
+      - DB_PASSWORD_INT=McpSql2025!Secure
+      
+      # Stubs for other envs
+      - DB_SERVER_STG=sql-stg.example.com
+      - DB_DATABASE_STG=MyAppDB
+      - DB_USERNAME_STG=mcp_user
+      - DB_PASSWORD_STG=placeholder
+      
+      - DB_SERVER_PRD=sql-prd.example.com
+      - DB_DATABASE_PRD=ProductionDB
+      - DB_USERNAME_PRD=mcp_user
+      - DB_PASSWORD_PRD=placeholder
+    # Run server in SSE mode
+    command: ["python", "server.py"]

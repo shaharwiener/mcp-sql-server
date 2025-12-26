@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "sql-server-mcp": {
+      "url": "http://localhost:9303/sse"
+    }
+  }
+}
+
+
+

@@ -1,347 +1,227 @@
 """
-Simple SQL Server MCP
-Provides clean access to SQL Server databases with only 2 tools: get_query and get_scheme
-Optimized for AI/LLM usage with minimal token consumption
+Production-Ready SQL Server MCP
 """
-import os
 import sys
-import json
-from typing import Dict, Any, List, Optional
-from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from typing import Dict, Any, Optional
 
-# Import our services
-from services.sql_review.execution_service import ExecutionService
-from services.sql_review.schema_service import SchemaService
-from services.sql_review.performance_service import PerformanceService
-from services.infrastructure.auth_service import AuthService
-from services.infrastructure.audit_service import AuditService
+from mcp.server.fastmcp import FastMCP  # type: ignore[import-untyped]
+from config.configuration import get_config
+from services.core.execution_service import ExecutionService
+from services.core.schema_service import SchemaService
+from services.analysis.sql_analyzer import SqlAnalyzer
+from services.analysis.review_service import ReviewService
+from services.common.logging import configure_logging
 
-# Load environment variables from .env and .env.local
-# Use absolute path to ensure .env.local is found regardless of working directory
-from pathlib import Path
-script_dir = Path(__file__).parent
-load_dotenv(script_dir / '.env')  # Load .env first
-load_dotenv(script_dir / '.env.local', override=True)  # Then .env.local (overrides .env)
+# Load Config
+try:
+    config = get_config()
+except Exception as e:
+    print(f"FATAL: Config load failed: {e}", file=sys.stderr)
+    sys.exit(1)
 
-# --- Utility Functions ---
-def safe_log(msg: str):
-    """Log a debug message as JSON to stderr"""
-    print(json.dumps({"type": "debug", "message": msg}), file=sys.stderr)
+# Initialize Output Logging
+# Forces JSON for Docker/K8s environments
+configure_logging(log_level=config.server.log_level, json_format=True)
 
-# --- Initialize MCP ---
+# Initialize MCP
 mcp = FastMCP("sql-server-mcp")
 
-# --- Configuration ---
-env = os.getenv('PANGO_ENV', 'Int')
-safe_log(f"Initializing SQL Server MCP with environment: {env}")
-
-# --- Initialize Services ---
-try:
-    execution_service = ExecutionService()
-    schema_service = SchemaService()
-    performance_service = PerformanceService()
-    auth_service = AuthService()
-    audit_service = AuditService()
-    
-    # Log loaded configuration
-    from config.settings import settings
-    safe_log(f"✅ Services initialized successfully")
-    safe_log(f"📊 Loaded databases: {settings.allowed_databases}")
-    safe_log(f"🔧 Connection strings configured: {len(settings.connection_strings)}")
-except Exception as e:
-    safe_log(f"❌ Failed to initialize services: {e}")
-    # Use fallback initialization
-    execution_service = None
-    schema_service = None
-    performance_service = None
-    auth_service = None
-    audit_service = None
-
-# ==================== Query Tool ====================
+# Initialize Services
+# We treat them as singletons
+execution_service = ExecutionService()
+schema_service = SchemaService()
+analyzer = SqlAnalyzer()
+review_service = ReviewService(sql_analyzer=analyzer, execution_service=execution_service)
 
 @mcp.tool()
-def get_query(query: str, database: Optional[str] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
+def review_sql_script(script: str, env: Optional[str] = None) -> Dict[str, Any]:
     """
-    Execute SELECT queries on SQL Server databases with automatic safety validation.
+    Perform a comprehensive, production-safe review of an SQL script.
+    
+    Returns a structured QA report with:
+    - Security analysis (AST)
+    - Performance insights (Execution Plan)
+    - Best practice violations
+    - Schema validation
+    """
+    return review_service.review(script, env=env)
+
+@mcp.tool()
+def query_readonly(query: str, env: Optional[str] = None, database: Optional[str] = None, page_size: Optional[int] = None, page: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Exectute a READ-ONLY SQL query (SELECT only).
+    
+    Strictly prohibits:
+    - UPDATE, DELETE, INSERT, MERGE
+    - DDL (CREATE, ALTER, DROP)
+    - Multi-statement batches
     
     Args:
-        query: Raw SQL SELECT statement to execute
-        database: Optional database override (mcpay/mobydom5/billing). 
-                 If not provided, auto-detects from query content.
-        user_id: Optional user identifier for audit logging
-        
-    Returns:
-        Dictionary containing:
-        - success: Boolean indicating if query executed successfully
-        - data: Query results as list of dictionaries
-        - database_used: Which database was queried
-        - row_count: Number of rows returned
-        - error: Error message if query failed
-        - warning: Optional warning message (e.g., for result truncation)
-        
-    Safety Features:
-        - Only SELECT statements allowed (blocks UPDATE/INSERT/DELETE)
-        - Automatic database detection from query content
-        - Query length and complexity validation
-        - Result set size limits (max 10,000 rows)
-        - Comprehensive audit logging
-        - Clean error handling optimized for AI consumption
-        
-    Examples:
-        - get_query("SELECT TOP 5 * FROM accounts WHERE active = 1")
-        - get_query("SELECT * FROM MyDB..Users WHERE email = 'user@example.com'")
-        - get_query("SELECT COUNT(*) as total FROM MyDB..accounts", "MyDB")
+        query: The SQL SELECT statement.
+        env: Optional environment override (Int, Stg, Prd).
+        database: Optional database name override.
+        page_size: Optional rows per page (max 1000). If provided, page must also be provided. If omitted, returns all rows up to max_rows limit.
+        page: Optional page number (1-based). If provided, page_size must also be provided. If omitted, returns all rows up to max_rows limit.
     """
-    if not execution_service:
-        return {
-            "success": False,
-            "error": "Query service not initialized. Check configuration.",
-            "columns": [],
-            "rows": [],
-            "row_count": 0
-        }
-    
-    # Get user_id from auth service if available
-    if user_id is None and auth_service:
-        user_id = auth_service.get_user_id() if auth_service else "system"
-    
-    try:
-        # Use configured database or the one specified in the call
-        from config.settings import settings
-        # If no database specified, use the first available database
-        if not database:
-            if settings.allowed_databases:
-                target_db = settings.allowed_databases[0]
-            else:
-                return {
-                    "success": False,
-                    "error": "No databases configured. Please set DB_CONN_<NAME> environment variables.",
-                    "columns": [],
-                    "rows": [],
-                    "row_count": 0
-                }
-        else:
-            target_db = database
-        return execution_service.execute_sql_query(target_db, query)
-    except Exception as e:
-        safe_log(f"Error in get_query: {str(e)}")
-        # Log the error
-        if audit_service:
-            audit_service.log_query(
-                database=database or "unknown",
-                query=query,
-                success=False,
-                user_id=user_id,
-                error=str(e)
-            )
-        return {
-            "success": False,
-            "error": "Query execution failed",
-            "data": [],
-            "database_used": database,
-            "row_count": 0
-        }
-
-# ==================== Schema Tool ====================
+    return execution_service.execute_readonly(query, env, database, page_size=page_size, page=page)
 
 @mcp.tool()
-def get_scheme(database: str, scope: str = "tables", user_id: Optional[str] = None) -> Dict[str, Any]:
+def schema_summary(env: Optional[str] = None, search_term: Optional[str] = None) -> Dict[str, Any]:
     """
-    Retrieve database schema information for SQL Server databases.
+    Get a token-efficient summary of the database schema.
     
     Args:
-        database: Target database (mcpay/mobydom5/billing)
-        scope: Schema scope to retrieve:
-              - "tables": List all tables and views
-              - "full": Complete schema with columns, types, constraints
-              - "table:{name}": Detailed info for specific table (e.g., "table:accounts")
-        user_id: Optional user identifier for audit logging
-        
+        env: Optional environment override.
+        search_term: Optional filter for table or schema names.
+    
     Returns:
-        Dictionary containing:
-        - success: Boolean indicating if operation succeeded  
-        - database: Database that was queried
-        - scope: Scope that was requested
-        - schema_info: Schema information based on scope:
-          * tables: List of table/view names with basic info
-          * full: Complete database schema structure
-          * table:name: Detailed table structure (columns, types, constraints, indexes)
-        - error: Error message if operation failed
-        
-    Safety Features:
-        - Database name validation
-        - Table name validation (prevents SQL injection)
-        - Comprehensive audit logging
-        - Generic error messages (details only in logs)
-        
-    Examples:
-        - get_scheme("MyDB", "tables") - List all tables in database
-        - get_scheme("MyDB", "full") - Complete database schema
-        - get_scheme("MyDB", "table:accounts") - Detailed accounts table structure
-        - get_scheme("MyDB", "table:Users") - Users table details
+        List of "TABLE schema.name: col1 (type), col2 (type)..."
     """
-    if not schema_service:
-        return {
-            "success": False,
-            "error": "Schema service not initialized. Check configuration.",
-            "database": database,
-            "scope": scope,
-            "schema_info": {}
-        }
-    
-    # Set user_id for audit logging
-    if not user_id:
-        user_id = auth_service.get_user_id() if auth_service else "system"
-    
-    try:
-        return schema_service.get_schema(database, scope, user_id=user_id)
-    except Exception as e:
-        safe_log(f"Error in get_scheme: {str(e)}")
-        # Log the error
-        if audit_service:
-            audit_service.log_schema_access(
-                database=database,
-                scope=scope,
-                success=False,
-                user_id=user_id,
-                error=str(e)
-            )
-        return {
-            "success": False,
-            "error": "Schema retrieval failed",
-            "database": database,
-            "scope": scope,
-            "schema_info": {}
-        }
-
-# ==================== Performance Tool ====================
+    return schema_service.get_summary(env, search_term)
 
 @mcp.tool()
-def get_execution_plan(query: str, database: Optional[str] = None) -> Dict[str, Any]:
+def explain(query: str, env: Optional[str] = None, database: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get the SQL Server execution plan for a query.
-    
-    Args:
-        query: The SQL query to analyze
-        database: Target database. If not provided, uses the first available database.
-        
-    Returns:
-        Dictionary containing:
-        - success: Boolean indicating if plan retrieval succeeded
-        - plan: XML execution plan as string
-        - error: Error message if failed
+    Get the estimated execution plan (XML) for a query without executing it.
     """
-    safe_log(f"🔍 get_execution_plan called for query: {query[:50]}... database: {database}")
-    
-    if not performance_service:
-        return {
-            "success": False,
-            "error": "Performance service not initialized. Check configuration.",
-            "plan": None
-        }
-        
-    try:
-        # Use configured database or the one specified in the call
-        from config.settings import settings
-        # If no database specified, use the first available database
-        if not database:
-            if settings.allowed_databases:
-                target_db = settings.allowed_databases[0]
-            else:
-                return {
-                    "success": False,
-                    "error": "No databases configured. Please set DB_CONN_<NAME> environment variables.",
-                    "plan": None
-                }
-        else:
-            target_db = database
-            
-        return performance_service.get_execution_plan(target_db, query)
-    except Exception as e:
-        safe_log(f"Error in get_execution_plan: {str(e)}")
-        return {
-            "success": False,
-            "error": f"Failed to get execution plan: {str(e)}",
-            "plan": None
-        }
-
-# ==================== Environment Info Tool ====================
+    return execution_service.get_execution_plan(query, env, database)
 
 @mcp.tool()
-def get_environment_info() -> Dict[str, Any]:
-    """
-    Get information about current SQL Server MCP configuration.
-    
-    Returns:
-        Environment and service status information
-    """
-    from config.settings import settings
-    
+def config_info() -> Dict[str, Any]:
+    """Return public configuration settings (sanitized)."""
     return {
-        "current_environment": env,
-        "services_initialized": {
-            "query_service": execution_service is not None,
-            "schema_service": schema_service is not None,
-            "performance_service": performance_service is not None,
-            "auth_service": auth_service is not None,
-            "audit_service": audit_service is not None
-        },
-        "supported_databases": settings.allowed_databases,
-        "supported_operations": {
-            "get_query": "Execute SELECT queries with auto-detection and validation",
-            "get_scheme": "Retrieve database schema information",
-            "get_execution_plan": "Get SQL Server execution plan for a query"
-        },
-        "security_features": {
-            "authentication_enabled": auth_service.enabled if auth_service else False,
-            "audit_logging_enabled": settings.AUDIT_LOG_ENABLED,
-            "max_query_length": settings.MAX_QUERY_LENGTH,
-            "max_result_rows": settings.MAX_RESULT_ROWS,
-            "query_validation": "Enabled (SELECT-only, pattern detection)"
-        },
-        "configuration": {
-            "PANGO_ENV": "Environment to use (Int/Stg/Prd)",
-            "AUTH_ENABLED": "Enable SSO authentication",
-            "AUDIT_LOG_ENABLED": "Enable audit logging",
-            "AUDIT_LOG_PATH": settings.AUDIT_LOG_PATH
+        "environment": config.environment,
+        "available_environments": config.available_environments,
+        "safety": {
+            "max_rows": config.safety.max_rows,
+            "read_only_enforced": True
         }
     }
 
-# --- Main Entrypoint ---
+@mcp.tool()
+def get_best_practices() -> Dict[str, Any]:
+    """
+    Get all SQL Server best practices defined by DBAs.
+    Returns comprehensive guidelines for query optimization.
+    """
+    return analyzer.bp_engine.get_all_practices_documentation()
+
 if __name__ == "__main__":
-    import time
+    import os
+    # Get host and port from environment (docker-compose) or config
+    server_host = os.getenv("HOST", config.server.host)
+    server_port = int(os.getenv("PORT", str(config.server.port)))
     
-    # Read transport config from environment variables
-    transport = os.getenv("MCP_TRANSPORT", "stdio")
-    host = os.getenv("MCP_HOST", "127.0.0.1")
-    port = int(os.getenv("MCP_PORT", "9303"))
-    
-    safe_log(f"🚀 Starting SQL Server MCP server in '{transport}' mode")
-    if transport in ["socket", "sse"]:
-        safe_log(f"📡 Server will listen on {host}:{port}")
-    
-    
-    # Track start time
-    run_start = int(time.time())
-    safe_log(f"SQL Server MCP started at {run_start}")
-    
-    # Run the server with proper configuration
-    if transport == "sse":
-        # For SSE mode, use FastMCP's sse_app with uvicorn
-        import uvicorn
+    print(f"Starting SQL Server MCP ({config.server.transport}) on {server_host}:{server_port}", file=sys.stderr)
+    if config.server.transport == "sse":
+        # FastMCP uses uvicorn.Server(config) internally, which may hardcode host to 127.0.0.1
+        # Monkey-patch uvicorn.Config to force host to 0.0.0.0 for Docker
+        import uvicorn.config
+        original_config_init = uvicorn.config.Config.__init__
         
-        # Get the SSE app from FastMCP
-        app = mcp.sse_app(mount_path="/sse")
+        def patched_config_init(self, app, *args, host=None, port=None, **kwargs):
+            # Force host to server_host if not explicitly set or if set to 127.0.0.1
+            if host is None or host == "127.0.0.1":
+                host = server_host
+            # Force port to server_port if not explicitly set
+            if port is None:
+                port = server_port
+            return original_config_init(self, app, *args, host=host, port=port, **kwargs)
         
-        # Run uvicorn with explicit host and port
-        safe_log(f"Starting uvicorn on {host}:{port} with /sse endpoint")
-        uvicorn.run(app, host=host, port=port, log_level="info")
+        uvicorn.config.Config.__init__ = patched_config_init
+        
+        # Set environment variables as well
+        os.environ["PORT"] = str(server_port)
+        os.environ["HOST"] = server_host
+        
+        # FastMCP SSE transport issue:
+        # - FastMCP normalizes message_path with mount_path to create absolute path
+        # - But SseServerTransport uses root_path from scope + endpoint
+        # - Cursor prepends base URL (/sse) to the endpoint, causing double /sse
+        # Solution: Pass relative path to SseServerTransport and use Route (not Mount)
+        # for messages endpoint to avoid root_path issues
+        from mcp.server.fastmcp.server import FastMCP  # type: ignore[import-untyped]
+        original_sse_app = FastMCP.sse_app
+        
+        def patched_sse_app(self, mount_path=None):
+            """Patched sse_app that passes relative path to SseServerTransport."""
+            from starlette.middleware import Middleware
+            from starlette.routing import Route
+            from mcp.server.sse import SseServerTransport
+            from starlette.responses import Response
+            from starlette.requests import Request
+            from typing import TYPE_CHECKING
+            
+            if TYPE_CHECKING:
+                from starlette.types import Scope, Receive, Send
+            
+            # Update mount_path in settings if provided
+            if mount_path is not None:
+                self.settings.mount_path = mount_path
+            
+            # Use relative path for SseServerTransport (what gets sent to client)
+            # root_path will be empty (no mount_path in mcp.run()), so SseServerTransport sends: "" + "/messages/" = "/messages/"
+            relative_message_path = self.settings.message_path  # e.g., "/messages/"
+            # For route registration, we need absolute path: /sse/messages/
+            # Since we're not using mount_path, we construct it manually
+            absolute_message_path = "/sse" + relative_message_path  # e.g., "/sse/messages/"
+            
+            # Create SseServerTransport with relative path
+            # When root_path is /sse (from mount_path), it will send /sse + /messages/ = /sse/messages/
+            sse = SseServerTransport(
+                relative_message_path,  # Pass relative path!
+                security_settings=self.settings.transport_security,
+            )
+            
+            # Create ASGI app classes for both endpoints
+            class SseApp:
+                def __init__(self, sse_transport, mcp_server):
+                    self.sse = sse_transport
+                    self.mcp_server = mcp_server
+                
+                async def __call__(self, scope, receive, send):
+                    async with self.sse.connect_sse(scope, receive, send) as streams:
+                        await self.mcp_server.run(
+                            streams[0],
+                            streams[1],
+                            self.mcp_server.create_initialization_options(),
+                        )
+            
+            class MessageApp:
+                def __init__(self, sse_transport):
+                    self.sse = sse_transport
+                
+                async def __call__(self, scope, receive, send):
+                    await self.sse.handle_post_message(scope, receive, send)
+            
+            routes: list = []
+            middleware: list = []
+            
+            # Register SSE endpoint - use Route with ASGI app class
+            # Route can accept an ASGI app directly
+            routes.append(Route(self.settings.sse_path, endpoint=SseApp(sse, self._mcp_server), methods=["GET"]))
+            
+            # Register POST endpoint for messages at both paths:
+            # 1. /sse/messages/ (absolute path with /sse prefix)
+            # 2. /messages/ (what Cursor actually uses - absolute from root)
+            # Use Route (not Mount) to handle POST requests with query params
+            routes.append(Route(absolute_message_path, endpoint=MessageApp(sse), methods=["POST"]))
+            routes.append(Route(relative_message_path, endpoint=MessageApp(sse), methods=["POST"]))  # Also register at /messages/
+            
+            # Add custom routes
+            routes.extend(self._custom_starlette_routes)
+            
+            from starlette.applications import Starlette
+            return Starlette(debug=self.settings.debug, routes=routes, middleware=middleware)
+        
+        FastMCP.sse_app = patched_sse_app
+        
+        # Configure paths
+        # Don't use mount_path - define absolute paths directly
+        # This way root_path will be empty, and SseServerTransport will send: "" + "/messages/" = "/messages/"
+        # Cursor will then prepend /sse to get /sse/messages/
+        mcp.settings.sse_path = "/sse"
+        mcp.settings.message_path = "/messages/"  # Relative - will be sent to client
+        mcp.run(transport="sse")  # No mount_path
     else:
-        # For stdio mode, use the standard run method
-        mcp.run(transport=transport)
-    
-    # Track end time
-    run_end = int(time.time())
-    duration = run_end - run_start
-    safe_log(f"SQL Server MCP ended at {run_end} — duration: {duration} seconds")
+        mcp.run(transport=config.server.transport)
